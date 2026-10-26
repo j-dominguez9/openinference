@@ -1,6 +1,7 @@
 /// Values for the `openinference.span.kind` attribute. Pick the value that best
 /// describes the span
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SpanKind {
     /// Raw provider API Calls
     Llm,
@@ -24,11 +25,12 @@ pub enum SpanKind {
     Evaluator,
     /// Prompt-registry lookup
     Prompt,
+    /// Fallback when no other kind applies
     Unknown,
 }
 
 impl SpanKind {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             SpanKind::Llm => "LLM",
             SpanKind::Chain => "CHAIN",
@@ -47,7 +49,8 @@ impl SpanKind {
 }
 
 /// Values for `annotation.annotator_kind` and `evaluation.annotator_kind`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum AnnotatorKind {
     Human,
     Llm,
@@ -55,7 +58,7 @@ pub enum AnnotatorKind {
 }
 
 impl AnnotatorKind {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             AnnotatorKind::Human => "HUMAN",
             AnnotatorKind::Llm => "LLM",
@@ -65,14 +68,15 @@ impl AnnotatorKind {
 }
 
 /// Values for the `input.mime_type` / `output.mime_type` attributes.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MimeType {
     Text,
     Json,
 }
 
 impl MimeType {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             MimeType::Text => "text/plain",
             MimeType::Json => "application/json",
@@ -82,7 +86,8 @@ impl MimeType {
 
 /// Values for the `llm.system` attribute (the AI product as identified by the
 /// client or server).
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LlmSystem {
     Openai,
     Anthropic,
@@ -93,7 +98,7 @@ pub enum LlmSystem {
 }
 
 impl LlmSystem {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             LlmSystem::Openai => "openai",
             LlmSystem::Anthropic => "anthropic",
@@ -108,7 +113,8 @@ impl LlmSystem {
 /// Values for the `llm.provider` attribute (the company providing the model —
 /// often the same as the system, but distinct for providers that resell
 /// models from elsewhere, e.g. Azure → OpenAI).
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LlmProvider {
     Openai,
     Anthropic,
@@ -134,7 +140,7 @@ pub enum LlmProvider {
 }
 
 impl LlmProvider {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             LlmProvider::Openai => "openai",
             LlmProvider::Anthropic => "anthropic",
@@ -163,14 +169,15 @@ impl LlmProvider {
 
 /// A subset of vendors currently known to offer
 /// a decision API. Values for `decision.system` attribute.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum DecisionSystem {
     TypeSafe,
     Openai,
 }
 
 impl DecisionSystem {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             DecisionSystem::TypeSafe => "typesafe",
             DecisionSystem::Openai => "openai",
@@ -180,14 +187,15 @@ impl DecisionSystem {
 
 /// Well-known values for the `decision.provider` attribute: who hosts the decision model
 /// that answered
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum DecisionProvider {
     TypeSafe,
     Openai,
 }
 
 impl DecisionProvider {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             DecisionProvider::TypeSafe => "typesafe",
             DecisionProvider::Openai => "openai",
