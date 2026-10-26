@@ -1,0 +1,10 @@
+[package]
+name = "openinference-instrumentation"
+version = "0.1.0"
+description = "OpenInference instrumentation core for Rust: trace configuration for masking sensitive span attributes."
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -3,5 +3,9 @@
 version = 4
 
 [[package]]
+name = "openinference-instrumentation"
+version = "0.1.0"
+
+[[package]]
 name = "openinference-semantic-conventions"
 version = "0.1.0"
