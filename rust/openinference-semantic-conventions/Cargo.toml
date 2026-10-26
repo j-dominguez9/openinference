@@ -1,6 +1,10 @@
 [package]
 name = "openinference-semantic-conventions"
 version = "0.1.0"
-edition = "2024"
+description = "OpenInference semantic conventions for Rust: span attribute keys and well-known values."
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
