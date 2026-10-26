@@ -177,6 +177,16 @@ Normalize and convert data across other instrumentation libraries by adding span
 
 Requires Go 1.25+. Pair with [`arize-otel-go`](https://github.com/Arize-ai/arize-otel-go) for the one-line OTLP/HTTP setup to [Arize AX](https://arize.com/products/ax?utm_source=docs&utm_medium=web&utm_content=openinference), or wire up any OTel exporter (e.g. [Phoenix](https://github.com/Arize-ai/phoenix) at `http://localhost:6006/v1/traces`).
 
+## Rust
+
+### Libraries
+
+| Package | Description | Version |
+| --- | --- | --- |
+| [`openinference-semantic-conventions`](./rust/openinference-semantic-conventions) | Semantic conventions for tracing of LLM Apps. | `cargo add openinference-semantic-conventions` |
+
+Requires Rust 1.85+ (edition 2024). Pair with any OTel exporter (e.g. [`opentelemetry-otlp`](https://crates.io/crates/opentelemetry-otlp) pointed at [Arize AX](https://arize.com/products/ax?utm_source=docs&utm_medium=web&utm_content=openinference) or [Phoenix](https://github.com/Arize-ai/phoenix) at `http://localhost:6006/v1/traces`).
+
 ## Supported Destinations
 
 OpenInference supports the following destinations as span collectors.

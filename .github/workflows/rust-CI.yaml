@@ -1,0 +1,103 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least-privilege GITHUB_TOKEN: this workflow only needs to read the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: test-rust-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    name: Filter Changes
+    runs-on: ubuntu-latest
+    outputs:
+      diff: ${{ steps.filter.outputs.diff }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            diff:
+              - ".github/workflows/rust-CI.yaml"
+              - "rust/Cargo.toml"
+              - "rust/Cargo.lock"
+              - "rust/openinference-semantic-conventions/**"
+              - "scripts/check_rust_semconv.py"
+              - "python/openinference-semantic-conventions/src/openinference/semconv/trace/__init__.py"
+
+  ci:
+    name: CI Rust
+    needs: changes
+    if: ${{ needs.changes.outputs.diff == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./rust
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # rustup is preinstalled on GitHub-hosted runners, so no third-party
+      # toolchain action is needed.
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy (workspace)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --locked
+
+      - name: cargo doc (workspace)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+      - name: Set up Python for semconv drift check
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify Rust semconv covers Python source
+        working-directory: .
+        run: python3 scripts/check_rust_semconv.py
+
+  ci-required:
+    name: Rust CI Required
+    needs: [changes, ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more CI jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more CI jobs were cancelled"
+            exit 1
+          fi
+          echo "All CI jobs passed or were skipped"
