@@ -184,6 +184,7 @@ Requires Go 1.25+. Pair with [`arize-otel-go`](https://github.com/Arize-ai/arize
 | Package | Description | Version |
 | --- | --- | --- |
 | [`openinference-semantic-conventions`](./rust/openinference-semantic-conventions) | Semantic conventions for tracing of LLM Apps. | `cargo add openinference-semantic-conventions` |
+| [`openinference-instrumentation`](./rust/openinference-instrumentation) | Tracer wrapper, suppression, context attributes and trace configuration for OpenInference instrumentors. | `cargo add openinference-instrumentation` |
 
 Requires Rust 1.85+ (edition 2024). Pair with any OTel exporter (e.g. [`opentelemetry-otlp`](https://crates.io/crates/opentelemetry-otlp) pointed at [Arize AX](https://arize.com/products/ax?utm_source=docs&utm_medium=web&utm_content=openinference) or [Phoenix](https://github.com/Arize-ai/phoenix) at `http://localhost:6006/v1/traces`).
 

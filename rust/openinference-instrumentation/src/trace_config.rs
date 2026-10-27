@@ -99,7 +99,7 @@ pub struct TraceConfig {
     pub hide_choices: bool,
     /// Hides the content of retrieved documents.
     pub hide_retrieval_documents: bool,
-    /// Also emits OpenTelemetry GenAI semantic conventions.
+    /// Also emits OpenTelemetry GenAI semantic conventions. Not applied yet.
     pub enable_genai_semconv: bool,
     /// Longest base64-encoded image, in characters, kept on a span.
     pub base64_image_max_length: usize,
