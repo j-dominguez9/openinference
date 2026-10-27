@@ -1,8 +1,10 @@
 use openinference_semantic_conventions::attributes::{
-    DOCUMENT_CONTENT, DOCUMENT_METADATA, INPUT_MIME_TYPE, INPUT_VALUE, LLM_CHOICES,
-    LLM_INPUT_MESSAGES, LLM_INVOCATION_PARAMETERS, LLM_OUTPUT_MESSAGES, LLM_PROMPTS, LLM_TOOLS,
-    MESSAGE_CONTENT, MESSAGE_CONTENT_TEXT, MESSAGE_CONTENTS, OUTPUT_MIME_TYPE, OUTPUT_VALUE,
-    RERANKER_INPUT_DOCUMENTS, RERANKER_OUTPUT_DOCUMENTS, RERANKER_QUERY, RETRIEVAL_DOCUMENTS,
+    DOCUMENT_CONTENT, DOCUMENT_METADATA, EMBEDDING_EMBEDDINGS, EMBEDDING_TEXT, EMBEDDING_VECTOR,
+    IMAGE_URL, INPUT_IMAGES, INPUT_MIME_TYPE, INPUT_VALUE, LLM_CHOICES, LLM_INPUT_MESSAGES,
+    LLM_INVOCATION_PARAMETERS, LLM_OUTPUT_MESSAGES, LLM_PROMPTS, LLM_TOOLS, MESSAGE_CONTENT,
+    MESSAGE_CONTENT_IMAGE, MESSAGE_CONTENT_TEXT, MESSAGE_CONTENTS, OUTPUT_IMAGES, OUTPUT_MIME_TYPE,
+    OUTPUT_VALUE, RERANKER_INPUT_DOCUMENTS, RERANKER_OUTPUT_DOCUMENTS, RERANKER_QUERY,
+    RETRIEVAL_DOCUMENTS,
 };
 use opentelemetry::Value;
 
@@ -260,6 +262,41 @@ impl TraceConfig {
         if self.hides_output_text(key) {
             return redacted();
         }
+
+        if (self.hide_inputs || self.hide_input_images) && is_input_image(key) {
+            return None;
+        }
+
+        if self.hide_outputs && is_output_image(key) {
+            return None;
+        }
+
+        if is_image_url(key) {
+            if let Value::String(s) = &value {
+                let url = s.as_str();
+                // Count characters, not bytes, to match Python's len().
+                if is_base64_url(url) && url.chars().count() > self.base64_image_max_length {
+                    // Python can hand oversized images to a blob uploader; Rust has none yet.
+                    return redacted();
+                }
+            }
+            return Some(value);
+        }
+
+        if self.hide_embeddings_vectors
+            && key.contains(EMBEDDING_EMBEDDINGS)
+            && key.contains(EMBEDDING_VECTOR)
+        {
+            return redacted();
+        }
+
+        if self.hide_embeddings_text
+            && key.contains(EMBEDDING_EMBEDDINGS)
+            && key.contains(EMBEDDING_TEXT)
+        {
+            return redacted();
+        }
+
         Some(value)
     }
 
@@ -314,6 +351,27 @@ fn is_within(key: &str, namespace: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
+/// True for an image in an input message or under `input.images`.
+fn is_input_image(key: &str) -> bool {
+    (key.contains(LLM_INPUT_MESSAGES) && key.contains(MESSAGE_CONTENT_IMAGE))
+        || is_within(key, INPUT_IMAGES)
+}
+
+/// True for an image in an output message or under `output.images`.
+fn is_output_image(key: &str) -> bool {
+    (key.contains(LLM_OUTPUT_MESSAGES) && key.contains(MESSAGE_CONTENT_IMAGE))
+        || is_within(key, OUTPUT_IMAGES)
+}
+
+fn is_image_url(key: &str) -> bool {
+    key.ends_with(IMAGE_URL) && (is_input_image(key) || is_output_image(key))
+}
+
+/// True for a base64-encoded image data URL.
+fn is_base64_url(url: &str) -> bool {
+    url.starts_with("data:image/") && url.contains("base64")
+}
+
 fn env_bool(lookup: &impl Fn(&str) -> Option<String>, name: &str, default: bool) -> bool {
     let Some(value) = lookup(name) else {
         return default;
@@ -331,8 +389,11 @@ fn env_usize(lookup: &impl Fn(&str) -> Option<String>, name: &str, default: usiz
         return default;
     };
 
-    match value.trim().parse::<usize>() {
-        Ok(n) => n,
+    // Python's int() accepts negatives, and a negative maximum redacts every
+    // image; 0 does the same here, since an empty string is never base64.
+    // Python also accepts `1_000`; Rust doesn't, and falls back to the default.
+    match value.trim().parse::<i64>() {
+        Ok(n) => usize::try_from(n).unwrap_or(0),
         Err(_) => default,
     }
 }
@@ -445,14 +506,16 @@ mod tests {
 
     #[test]
     fn base64_image_max_length_parsing_matches_python() {
-        // Python's int() ignores surrounding whitespace; anything that
-        // isn't a non-negative integer falls back to the default.
+        // Python's int() ignores surrounding whitespace, and a negative value
+        // redacts every image, which 0 also does. Anything that isn't an
+        // integer falls back to the default.
         let cases = [
             ("100", 100),
             (" 100 ", 100),
             ("0", 0),
             ("abc", 32_000),
-            ("-5", 32_000),
+            ("-5", 0),
+            ("+5", 5),
             ("1.5", 32_000),
             ("", 32_000),
         ];
@@ -536,7 +599,7 @@ mod tests {
     fn mask_rules_match_python() {
         use Expect::{Drop, Keep, Redact};
 
-        let cases: [(&str, Flag, &str, Expect); 30] = [
+        let cases: [(&str, Flag, &str, Expect); 42] = [
             (
                 "tools",
                 |c| c.hide_llm_tools = true,
@@ -693,6 +756,79 @@ mod tests {
                 "llm.output_messages.0.message.role",
                 Keep,
             ),
+            (
+                "input images",
+                |c| c.hide_input_images = true,
+                "llm.input_messages.0.message.contents.1.message_content.image.image.url",
+                Drop,
+            ),
+            (
+                "input images",
+                |c| c.hide_input_images = true,
+                "input.images.0.image.url",
+                Drop,
+            ),
+            (
+                "input images",
+                |c| c.hide_input_images = true,
+                "llm.input_messages.0.message.contents.0.message_content.text",
+                Keep,
+            ),
+            (
+                "input images",
+                |c| c.hide_input_images = true,
+                "llm.output_messages.0.message.contents.0.message_content.image.image.url",
+                Keep,
+            ),
+            // Only the image rule catches span-level input images under hide_inputs.
+            (
+                "input images",
+                |c| c.hide_inputs = true,
+                "input.images.0.image.url",
+                Drop,
+            ),
+            (
+                "output images",
+                |c| c.hide_outputs = true,
+                "output.images.0.image.url",
+                Drop,
+            ),
+            (
+                "output images",
+                |c| c.hide_outputs = true,
+                "llm.output_messages.0.message.contents.0.message_content.image.image.url",
+                Drop,
+            ),
+            (
+                "embeddings",
+                |c| c.hide_embeddings_vectors = true,
+                "embedding.embeddings.0.embedding.vector",
+                Redact,
+            ),
+            (
+                "embeddings",
+                |c| c.hide_embeddings_vectors = true,
+                "embedding.embeddings.0.embedding.text",
+                Keep,
+            ),
+            (
+                "embeddings",
+                |c| c.hide_embeddings_text = true,
+                "embedding.embeddings.0.embedding.text",
+                Redact,
+            ),
+            (
+                "embeddings",
+                |c| c.hide_embeddings_text = true,
+                "embedding.embeddings.0.embedding.vector",
+                Keep,
+            ),
+            (
+                "embeddings",
+                |c| c.hide_embeddings_text = true,
+                "embedding.model_name",
+                Keep,
+            ),
         ];
 
         for (rule, set_flag, key, expect) in cases {
@@ -716,5 +852,66 @@ mod tests {
                 "{rule}: {key} should {expect:?}"
             );
         }
+    }
+
+    #[test]
+    fn oversized_base64_images_are_redacted() {
+        let config = TraceConfig {
+            base64_image_max_length: 30,
+            ..TraceConfig::default()
+        };
+        let long = "A".repeat(40);
+        let image_key = "input.images.0.image.url";
+
+        let cases = [
+            (image_key, format!("data:image/png;base64,{long}"), true),
+            (image_key, "data:image/png;base64,AAAA".to_string(), false),
+            (image_key, format!("https://example.com/{long}.png"), false),
+            // Each condition of is_base64_url must hold on its own.
+            (image_key, format!("data:text/plain;base64,{long}"), false),
+            (image_key, format!("data:image/png,{long}"), false),
+            // Only image URL keys are checked.
+            (INPUT_VALUE, format!("data:image/png;base64,{long}"), false),
+            (
+                "llm.output_messages.0.message.contents.0.message_content.image.image.url",
+                format!("data:image/png;base64,{long}"),
+                true,
+            ),
+        ];
+
+        for (key, url, redact) in cases {
+            let value = Value::from(url.clone());
+            let expected = if redact {
+                Value::from(REDACTED_VALUE)
+            } else {
+                value.clone()
+            };
+            assert_eq!(config.mask(key, value), Some(expected), "{key} = {url}");
+        }
+    }
+
+    #[test]
+    fn negative_max_length_redacts_every_base64_image() {
+        let config = config_with(&[(ENV_BASE64_IMAGE_MAX_LENGTH, "-1")]);
+        let tiny = Value::from("data:image/png;base64,A");
+        assert_eq!(
+            config.mask("input.images.0.image.url", tiny),
+            Some(Value::from(REDACTED_VALUE))
+        );
+    }
+
+    #[test]
+    fn image_length_counts_characters_not_bytes() {
+        // 25 characters but 26 bytes, because `é` takes two bytes in UTF-8.
+        let url = "data:image/é;base64,AAAAA";
+        assert_eq!(url.chars().count(), 25);
+        let config = TraceConfig {
+            base64_image_max_length: 25,
+            ..TraceConfig::default()
+        };
+        assert_eq!(
+            config.mask("input.images.0.image.url", Value::from(url)),
+            Some(Value::from(url))
+        );
     }
 }
