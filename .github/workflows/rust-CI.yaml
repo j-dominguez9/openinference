@@ -62,6 +62,12 @@ jobs:
           rustup default stable
           rustc --version
 
+      # Keep in sync with rust-version in rust/Cargo.toml.
+      - name: cargo check (MSRV 1.85)
+        run: |
+          rustup toolchain install 1.85 --profile minimal
+          cargo +1.85 check --workspace --all-targets --locked
+
       - name: cargo fmt
         run: cargo fmt --all --check
 

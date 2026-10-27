@@ -391,9 +391,12 @@ fn env_usize(lookup: &impl Fn(&str) -> Option<String>, name: &str, default: usiz
 
     // Python's int() accepts negatives, and a negative maximum redacts every
     // image; 0 does the same here, since an empty string is never base64.
-    // Python also accepts `1_000`; Rust doesn't, and falls back to the default.
-    match value.trim().parse::<i64>() {
-        Ok(n) => usize::try_from(n).unwrap_or(0),
+    // Values too large for usize are capped rather than rejected, since Python
+    // ints are unbounded. Python also accepts `1_000`; Rust doesn't, and falls
+    // back to the default.
+    match value.trim().parse::<i128>() {
+        Ok(n) if n < 0 => 0,
+        Ok(n) => usize::try_from(n).unwrap_or(usize::MAX),
         Err(_) => default,
     }
 }
@@ -518,6 +521,7 @@ mod tests {
             ("+5", 5),
             ("1.5", 32_000),
             ("", 32_000),
+            ("99999999999999999999", usize::MAX),
         ];
 
         for (value, expected) in cases {

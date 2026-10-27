@@ -1,7 +1,7 @@
 [package]
 name = "openinference-instrumentation"
 version = "0.1.0"
-description = "OpenInference instrumentation core for Rust: trace configuration for masking sensitive span attributes."
+description = "OpenInference instrumentation core for Rust: trace configuration, tracing suppression, and context attributes."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
