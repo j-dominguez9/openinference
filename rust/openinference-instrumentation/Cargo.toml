@@ -8,3 +8,5 @@ rust-version.workspace = true
 edition.workspace = true
 
 [dependencies]
+openinference-semantic-conventions = { version = "0.1.0", path = "../openinference-semantic-conventions" }
+opentelemetry = "0.33.1"

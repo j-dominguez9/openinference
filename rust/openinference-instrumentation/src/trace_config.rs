@@ -1,3 +1,11 @@
+use openinference_semantic_conventions::attributes::{
+    DOCUMENT_CONTENT, DOCUMENT_METADATA, INPUT_MIME_TYPE, INPUT_VALUE, LLM_CHOICES,
+    LLM_INPUT_MESSAGES, LLM_INVOCATION_PARAMETERS, LLM_OUTPUT_MESSAGES, LLM_PROMPTS, LLM_TOOLS,
+    MESSAGE_CONTENT, MESSAGE_CONTENT_TEXT, MESSAGE_CONTENTS, OUTPUT_MIME_TYPE, OUTPUT_VALUE,
+    RERANKER_INPUT_DOCUMENTS, RERANKER_OUTPUT_DOCUMENTS, RERANKER_QUERY, RETRIEVAL_DOCUMENTS,
+};
+use opentelemetry::Value;
+
 /// Replaces the value of an attribute that trace configuration hides.
 pub const REDACTED_VALUE: &str = "__REDACTED__";
 
@@ -180,6 +188,132 @@ impl TraceConfig {
     }
 }
 
+impl TraceConfig {
+    /// Returns what to record for the attribute `key`: `value` unchanged,
+    /// [`REDACTED_VALUE`] in its place, or `None` to drop the attribute.
+    ///
+    /// The rules and their order follow Python's `TraceConfig.mask`; the
+    /// first rule that matches wins.
+    pub fn mask(&self, key: &str, value: Value) -> Option<Value> {
+        let redacted = || Some(Value::from(REDACTED_VALUE));
+
+        if self.hide_llm_invocation_parameters && key == LLM_INVOCATION_PARAMETERS {
+            return None;
+        }
+
+        if self.hides_llm_tools(key) {
+            return None;
+        }
+
+        if self.hide_inputs && key == INPUT_VALUE {
+            return redacted();
+        }
+
+        if self.hide_inputs && key == INPUT_MIME_TYPE {
+            return None;
+        }
+
+        if self.hide_inputs && key == RERANKER_QUERY {
+            return redacted();
+        }
+
+        if self.hide_inputs && is_within(key, RERANKER_INPUT_DOCUMENTS) {
+            return None;
+        }
+
+        if self.hide_outputs && key == OUTPUT_VALUE {
+            return redacted();
+        }
+
+        if self.hide_outputs && key == OUTPUT_MIME_TYPE {
+            return None;
+        }
+
+        if self.hide_outputs && is_within(key, RERANKER_OUTPUT_DOCUMENTS) {
+            return None;
+        }
+
+        if self.hides_retrieval_documents(key) {
+            return redacted();
+        }
+
+        if self.hides_input_messages(key) {
+            return None;
+        }
+
+        if self.hides_prompts(key) {
+            return redacted();
+        }
+
+        if self.hides_output_messages(key) {
+            return None;
+        }
+
+        if self.hides_choices(key) {
+            return redacted();
+        }
+
+        if self.hides_input_text(key) {
+            return redacted();
+        }
+
+        if self.hides_output_text(key) {
+            return redacted();
+        }
+        Some(value)
+    }
+
+    // Python matches these prefixes with `in`, so any key containing one
+    // counts.
+
+    fn hides_llm_tools(&self, key: &str) -> bool {
+        (self.hide_inputs || self.hide_llm_tools) && key.contains(LLM_TOOLS)
+    }
+
+    fn hides_input_messages(&self, key: &str) -> bool {
+        (self.hide_inputs || self.hide_input_messages) && key.contains(LLM_INPUT_MESSAGES)
+    }
+
+    fn hides_prompts(&self, key: &str) -> bool {
+        (self.hide_inputs || self.hide_prompts) && key.contains(LLM_PROMPTS)
+    }
+
+    fn hides_output_messages(&self, key: &str) -> bool {
+        (self.hide_outputs || self.hide_output_messages) && key.contains(LLM_OUTPUT_MESSAGES)
+    }
+
+    fn hides_choices(&self, key: &str) -> bool {
+        (self.hide_outputs || self.hide_choices) && key.contains(LLM_CHOICES)
+    }
+
+    fn hides_retrieval_documents(&self, key: &str) -> bool {
+        (self.hide_outputs || self.hide_retrieval_documents)
+            && is_within(key, RETRIEVAL_DOCUMENTS)
+            && (key.ends_with(DOCUMENT_CONTENT) || key.ends_with(DOCUMENT_METADATA))
+    }
+
+    fn hides_input_text(&self, key: &str) -> bool {
+        self.hide_input_text
+            && key.contains(LLM_INPUT_MESSAGES)
+            && ((key.contains(MESSAGE_CONTENT) && !key.contains(MESSAGE_CONTENTS))
+                || key.contains(MESSAGE_CONTENT_TEXT))
+    }
+
+    fn hides_output_text(&self, key: &str) -> bool {
+        self.hide_output_text
+            && key.contains(LLM_OUTPUT_MESSAGES)
+            && ((key.contains(MESSAGE_CONTENT) && !key.contains(MESSAGE_CONTENTS))
+                || key.contains(MESSAGE_CONTENT_TEXT))
+    }
+}
+
+/// True for `namespace` itself and any key indexed under it, such as
+/// `reranker.input_documents.0.document.id`.
+fn is_within(key: &str, namespace: &str) -> bool {
+    key.strip_prefix(namespace)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+}
+
 fn env_bool(lookup: &impl Fn(&str) -> Option<String>, name: &str, default: bool) -> bool {
     let Some(value) = lookup(name) else {
         return default;
@@ -328,6 +462,258 @@ mod tests {
             assert_eq!(
                 config.base64_image_max_length, expected,
                 "parsed {value:?} wrong"
+            );
+        }
+    }
+
+    fn text(s: &'static str) -> Value {
+        Value::from(s)
+    }
+
+    #[test]
+    fn default_config_keeps_every_attribute() {
+        let config = TraceConfig::default();
+        for key in [LLM_INVOCATION_PARAMETERS, INPUT_VALUE, INPUT_MIME_TYPE] {
+            assert_eq!(
+                config.mask(key, text("x")),
+                Some(text("x")),
+                "{key} changed"
+            );
+        }
+    }
+
+    #[test]
+    fn hide_llm_invocation_parameters_drops_them() {
+        let config = TraceConfig {
+            hide_llm_invocation_parameters: true,
+            ..TraceConfig::default()
+        };
+        assert_eq!(config.mask(LLM_INVOCATION_PARAMETERS, text("{}")), None);
+        assert_eq!(config.mask(INPUT_VALUE, text("hi")), Some(text("hi")));
+    }
+
+    #[test]
+    fn hide_inputs_redacts_value_and_drops_mime_type_and_messages() {
+        let config = TraceConfig {
+            hide_inputs: true,
+            ..TraceConfig::default()
+        };
+        assert_eq!(
+            config.mask(INPUT_VALUE, text("hi")),
+            Some(text(REDACTED_VALUE))
+        );
+        assert_eq!(config.mask(INPUT_MIME_TYPE, text("text/plain")), None);
+        assert_eq!(
+            config.mask("llm.input_messages.0.message.content", text("hi")),
+            None
+        );
+    }
+
+    #[test]
+    fn hide_input_messages_keeps_input_value() {
+        let config = TraceConfig {
+            hide_input_messages: true,
+            ..TraceConfig::default()
+        };
+        assert_eq!(
+            config.mask("llm.input_messages.0.message.role", text("user")),
+            None
+        );
+        assert_eq!(config.mask(INPUT_VALUE, text("hi")), Some(text("hi")));
+    }
+
+    /// Turns on one flag, so a test table can name flags.
+    type Flag = fn(&mut TraceConfig);
+
+    #[derive(Debug, Clone, Copy)]
+    enum Expect {
+        Keep,
+        Redact,
+        Drop,
+    }
+
+    #[test]
+    fn mask_rules_match_python() {
+        use Expect::{Drop, Keep, Redact};
+
+        let cases: [(&str, Flag, &str, Expect); 30] = [
+            (
+                "tools",
+                |c| c.hide_llm_tools = true,
+                "llm.tools.0.tool.json_schema",
+                Drop,
+            ),
+            (
+                "tools",
+                |c| c.hide_inputs = true,
+                "llm.tools.0.tool.json_schema",
+                Drop,
+            ),
+            ("tools", |c| c.hide_llm_tools = true, INPUT_VALUE, Keep),
+            ("reranker", |c| c.hide_inputs = true, RERANKER_QUERY, Redact),
+            (
+                "reranker",
+                |c| c.hide_inputs = true,
+                "reranker.input_documents.0.document.id",
+                Drop,
+            ),
+            (
+                "reranker",
+                |c| c.hide_inputs = true,
+                RERANKER_INPUT_DOCUMENTS,
+                Drop,
+            ),
+            // is_within needs a `.` after the namespace, not just a shared prefix.
+            (
+                "reranker",
+                |c| c.hide_inputs = true,
+                "reranker.input_documents_count",
+                Keep,
+            ),
+            ("outputs", |c| c.hide_outputs = true, OUTPUT_VALUE, Redact),
+            ("outputs", |c| c.hide_outputs = true, OUTPUT_MIME_TYPE, Drop),
+            (
+                "outputs",
+                |c| c.hide_outputs = true,
+                "reranker.output_documents.1.document.score",
+                Drop,
+            ),
+            (
+                "retrieval",
+                |c| c.hide_retrieval_documents = true,
+                "retrieval.documents.0.document.content",
+                Redact,
+            ),
+            (
+                "retrieval",
+                |c| c.hide_retrieval_documents = true,
+                "retrieval.documents.0.document.metadata",
+                Redact,
+            ),
+            (
+                "retrieval",
+                |c| c.hide_retrieval_documents = true,
+                "retrieval.documents.0.document.id",
+                Keep,
+            ),
+            (
+                "retrieval",
+                |c| c.hide_outputs = true,
+                "retrieval.documents.0.document.content",
+                Redact,
+            ),
+            (
+                "prompts",
+                |c| c.hide_prompts = true,
+                "llm.prompts.0.prompt.text",
+                Redact,
+            ),
+            (
+                "prompts",
+                |c| c.hide_inputs = true,
+                "llm.prompts.0.prompt.text",
+                Redact,
+            ),
+            (
+                "output messages",
+                |c| c.hide_output_messages = true,
+                "llm.output_messages.0.message.content",
+                Drop,
+            ),
+            (
+                "output messages",
+                |c| c.hide_outputs = true,
+                "llm.output_messages.0.message.role",
+                Drop,
+            ),
+            (
+                "output messages",
+                |c| c.hide_output_messages = true,
+                OUTPUT_VALUE,
+                Keep,
+            ),
+            (
+                "choices",
+                |c| c.hide_choices = true,
+                "llm.choices.0.completion.text",
+                Redact,
+            ),
+            (
+                "choices",
+                |c| c.hide_outputs = true,
+                "llm.choices.0.completion.text",
+                Redact,
+            ),
+            ("choices", |c| c.hide_choices = true, OUTPUT_VALUE, Keep),
+            (
+                "input text",
+                |c| c.hide_input_text = true,
+                "llm.input_messages.0.message.content",
+                Redact,
+            ),
+            (
+                "input text",
+                |c| c.hide_input_text = true,
+                "llm.input_messages.0.message.contents.0.message_content.text",
+                Redact,
+            ),
+            (
+                "input text",
+                |c| c.hide_input_text = true,
+                "llm.input_messages.0.message.contents.0.message_content.image.image.url",
+                Keep,
+            ),
+            (
+                "input text",
+                |c| c.hide_input_text = true,
+                "llm.input_messages.0.message.role",
+                Keep,
+            ),
+            (
+                "output text",
+                |c| c.hide_output_text = true,
+                "llm.output_messages.0.message.content",
+                Redact,
+            ),
+            (
+                "output text",
+                |c| c.hide_output_text = true,
+                "llm.output_messages.0.message.contents.0.message_content.text",
+                Redact,
+            ),
+            (
+                "output text",
+                |c| c.hide_output_text = true,
+                "llm.output_messages.0.message.contents.0.message_content.image.image.url",
+                Keep,
+            ),
+            (
+                "output text",
+                |c| c.hide_output_text = true,
+                "llm.output_messages.0.message.role",
+                Keep,
+            ),
+        ];
+
+        for (rule, set_flag, key, expect) in cases {
+            // With no flags set, every key passes through unchanged.
+            assert_eq!(
+                TraceConfig::default().mask(key, text("x")),
+                Some(text("x")),
+                "default config changed {key}"
+            );
+
+            let mut config = TraceConfig::default();
+            set_flag(&mut config);
+            let expected = match expect {
+                Keep => Some(text("x")),
+                Redact => Some(text(REDACTED_VALUE)),
+                Drop => None,
+            };
+            assert_eq!(
+                config.mask(key, text("x")),
+                expected,
+                "{rule}: {key} should {expect:?}"
             );
         }
     }
