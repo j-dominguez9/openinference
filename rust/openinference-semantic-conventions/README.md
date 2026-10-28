@@ -29,7 +29,7 @@ use openinference_semantic_conventions::enums::{LlmProvider, SpanKind};
 
 span.set_attributes([
     KeyValue::new(OPENINFERENCE_SPAN_KIND, SpanKind::Llm.as_str()),
-    KeyValue::new(LLM_MODEL_NAME, "gpt-4o"),
+    KeyValue::new(LLM_MODEL_NAME, "gpt-6-luna"),
     KeyValue::new(LLM_PROVIDER, LlmProvider::Openai.as_str()),
 ]);
 ```
