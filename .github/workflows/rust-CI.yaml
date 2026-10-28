@@ -37,6 +37,7 @@ jobs:
               - "rust/Cargo.lock"
               - "rust/openinference-semantic-conventions/**"
               - "rust/openinference-instrumentation/**"
+              - "rust/openinference-instrumentation-async-openai/**"
               - "scripts/check_rust_semconv.py"
               - "python/openinference-semantic-conventions/src/openinference/semconv/trace/__init__.py"
 

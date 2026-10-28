@@ -48,7 +48,7 @@ fn main() {
         span.set_attributes([
             KeyValue::new(OPENINFERENCE_SPAN_KIND, SpanKind::Llm.as_str()),
             KeyValue::new(LLM_PROVIDER, LlmProvider::Openai.as_str()),
-            KeyValue::new(LLM_MODEL_NAME, "gpt-4o"),
+            KeyValue::new(LLM_MODEL_NAME, "gpt-6-luna"),
             // Hidden by `hide_inputs`: the value is redacted, the MIME type dropped.
             KeyValue::new(INPUT_VALUE, "What is observability?"),
             KeyValue::new(INPUT_MIME_TYPE, "text/plain"),
