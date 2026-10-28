@@ -1,0 +1,17 @@
+[package]
+name = "openinference-instrumentation"
+version = "0.1.0"
+description = "OpenInference instrumentation core for Rust: trace configuration, tracing suppression, and context attributes."
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[dependencies]
+openinference-semantic-conventions = { version = "0.1.0", path = "../openinference-semantic-conventions" }
+opentelemetry = "0.33.1"
+
+[dev-dependencies]
+opentelemetry-otlp = { version = "0.33", features = ["reqwest-rustls"] }
+opentelemetry_sdk = { version = "0.33.0", features = ["testing"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
